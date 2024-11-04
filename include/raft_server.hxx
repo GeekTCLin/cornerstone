@@ -130,8 +130,8 @@ private:
     timer_task<void>::executor election_exec_;
     ptr<delayed_task> election_task_;
     std::unordered_map<int32, ptr<peer>> peers_;
-    mutable std::shared_timed_mutex peers_lock_;
-    std::unordered_map<int32, ptr<rpc_client>> rpc_clients_;
+    mutable std::shared_timed_mutex peers_lock_;        // c++14 17 支持
+    std::unordered_map<int32, ptr<rpc_client>> rpc_clients_;    // 客户端map
     srv_role role_;
     ptr<srv_state> state_;
     ptr<log_store> log_store_;

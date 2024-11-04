@@ -652,6 +652,7 @@ void asio_service_impl::stop()
         std::unique_lock<std::mutex> lock(stopping_lock_);
         stopping_ = true;
         log_flush_tm_.cancel();
+        // stop 期间可能 存在 flush_all_loggers 调用，等待flush_all_loggers 执行完后唤醒
         stopping_cv_.wait(lock);
         lock.unlock();
         lock.release();

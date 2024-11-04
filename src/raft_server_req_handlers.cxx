@@ -469,6 +469,7 @@ ptr<resp_msg> raft_server::handle_rm_srv_req(req_msg& req)
     return resp;
 }
 
+// 处理添加节点请求
 ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req)
 {
     std::vector<ptr<log_entry>>& entries(req.log_entries());
@@ -485,11 +486,13 @@ ptr<resp_msg> raft_server::handle_add_srv_req(req_msg& req)
         return resp;
     }
 
+    // 从 buffer中解析数据
     ptr<srv_config> srv_conf(srv_config::deserialize(entries[0]->get_buf()));
     {
         read_lock(peers_lock_);
         if (peers_.find(srv_conf->get_id()) != peers_.end() || id_ == srv_conf->get_id())
         {
+            // id 重复
             l_->warn(
                 lstrfmt("the server to be added has a duplicated id with existing server %d").fmt(srv_conf->get_id()));
             return resp;
@@ -579,6 +582,7 @@ void raft_server::sync_log_to_new_srv(ulong start_idx)
 
 void raft_server::invite_srv_to_join_cluster()
 {
+    // 发送加入集群请求
     ptr<req_msg> req(cs_new<req_msg>(
         state_->get_term(),
         msg_type::join_cluster_request,
@@ -591,6 +595,7 @@ void raft_server::invite_srv_to_join_cluster()
     srv_to_join_->send_req(req, ex_resp_handler_);
 }
 
+// 处理加入集群请求
 ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req)
 {
     std::vector<ptr<log_entry>>& entries = req.log_entries();
@@ -608,7 +613,9 @@ ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req)
     }
 
     catching_up_ = true;
+    // 设置为follower
     role_ = srv_role::follower;
+    // 存储 leader 节点的 id
     leader_ = req.get_src();
     sm_commit_index_ = 0;
     quick_commit_idx_ = 0;

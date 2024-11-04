@@ -948,6 +948,7 @@ void raft_server::commit_in_bg()
     }
 }
 
+// 向leader 节点发送 节点加入请求
 ptr<async_result<bool>> raft_server::add_srv(const srv_config& srv)
 {
     bufptr buf(srv.serialize());

@@ -185,6 +185,8 @@ public:
 public:
     virtual ptr<cluster_config> load_config()
     {
+        // 集群配置
+        // 有3个节点
         ptr<cluster_config> conf = cs_new<cluster_config>();
         conf->get_servers().push_back(cs_new<srv_config>(1, "port1"));
         conf->get_servers().push_back(cs_new<srv_config>(2, "port2"));
@@ -225,9 +227,13 @@ private:
 class dummy_state_machine : public state_machine
 {
 public:
+    dummy_state_machine(int id): id_(id){
+
+    }
+
     virtual void commit(const ulong, buffer& data, const uptr<log_entry_cookie>&)
     {
-        std::cout << "commit message:" << reinterpret_cast<const char*>(data.data()) << std::endl;
+        std::cout << "srv_id:" << id_ << " commit message:" << reinterpret_cast<const char*>(data.data()) << std::endl;
     }
 
     virtual void pre_commit(const ulong, buffer&, const uptr<log_entry_cookie>&)
@@ -262,6 +268,8 @@ public:
     virtual void create_snapshot(snapshot&, async_result<bool>::handler_type&)
     {
     }
+private:
+    int id_;
 };
 
 class msg_bus
@@ -423,7 +431,10 @@ public:
         : queue_(bus.get_queue(port)), stopped_(false), stop_lock_(), stopped_cv_()
     {
     }
-    __nocopy__(test_rpc_listener) public : virtual void listen(ptr<msg_handler>& handler) __override__
+    __nocopy__(test_rpc_listener) 
+
+public : 
+    virtual void listen(ptr<msg_handler>& handler) __override__
     {
         std::thread t([this, handler]() mutable { this->do_listening(handler); });
         t.detach();
@@ -468,6 +479,7 @@ private:
     std::condition_variable stopped_cv_;
 };
 
+// msg_bus 中存在3个消息队列，负责 3个线程之间的通信 以及 client 和 leader之间的通信
 msg_bus bus;
 ptr<rpc_client_factory> rpc_factory(cs_new<test_rpc_cli_factory, msg_bus&>(bus));
 std::condition_variable stop_cv;
@@ -487,12 +499,14 @@ void test_raft_server()
     t3.detach();
     std::cout << "waiting for leader election..." << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(1));
+
     ptr<rpc_client> client(rpc_factory->create_client("port1"));
     ptr<req_msg> msg = cs_new<req_msg>(0, msg_type::client_request, 0, 1, 0, 0, 0);
     bufptr buf = buffer::alloc(100);
     buf->put("hello");
     buf->pos(0);
     msg->log_entries().push_back(cs_new<log_entry>(0, std::move(buf)));
+
     rpc_handler handler = (rpc_handler)([&client](ptr<resp_msg>& rsp, const ptr<rpc_exception>&) -> void {
         assert(rsp->get_accepted() || rsp->get_dst() > 0);
         if (!rsp->get_accepted()) {
@@ -526,17 +540,18 @@ void test_raft_server()
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
     asio_svc->stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    std::remove("log1.log");
-    std::remove("log2.log");
-    std::remove("log3.log");
+    //std::remove("log1.log");
+    //std::remove("log2.log");
+    //std::remove("log3.log");
 }
 
 void run_raft_instance(int srv_id)
 {
     ptr<rpc_listener> listener(
         cs_new<test_rpc_listener, const std::string&, msg_bus&>(sstrfmt("port%d").fmt(srv_id), bus));
+    // 这里测试的rafte 节点使用同一份 节点配置
     ptr<state_mgr> smgr(cs_new<in_memory_state_mgr>(srv_id));
-    ptr<state_machine> smachine(cs_new<dummy_state_machine>());
+    ptr<state_machine> smachine(cs_new<dummy_state_machine>(srv_id));
     ptr<logger> l(asio_svc->create_logger(asio_service::log_level::debug, sstrfmt("log%d.log").fmt(srv_id)));
     raft_params* params(new raft_params());
     (*params)
@@ -546,8 +561,10 @@ void run_raft_instance(int srv_id)
         .with_max_append_size(100)
         .with_rpc_failure_backoff(50);
     ptr<delayed_task_scheduler> scheduler = asio_svc;
-    context* ctx(new context(smgr, smachine, listener, l, rpc_factory, scheduler, nilptr, params));
+    context* ctx(new context(smgr, smachine, listener, l, rpc_factory, scheduler, nullptr, params));
+
     ptr<raft_server> server(cs_new<raft_server>(ctx));
+    // listen 不断从 queue 中消费消息
     listener->listen(server);
 
     // some example code for how to append log entries to raft_server

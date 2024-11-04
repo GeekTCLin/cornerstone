@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+/**
+ * 异步等待结果类
+ * 一个线程 等待结果
+ * 另一个线程写入结果后唤醒被阻塞的线程
+ */
+
 #ifndef _ASYNC_HXX_
 #define _ASYNC_HXX_
 
@@ -61,12 +67,14 @@ public:
         }
     }
 
+    // 设置result
     template <typename _TResult, typename _TException>
     void set_result(_TResult&& result, _TException&& err)
     {
         handler_type handler;
         {
             std::lock_guard<std::mutex> guard(lock_);
+            // forward 保留右值
             result_ = std::forward<_TResult>(result);
             err_ = std::forward<_TException>(err);
             has_result_ = true;
@@ -81,6 +89,7 @@ public:
             handler(result_, err_);
         }
 
+        // 唤醒 get 阻塞的线程
         cv_.notify_all();
     }
 
@@ -97,6 +106,7 @@ public:
             throw err_;
         }
 
+        // 没有被设置 result，等待唤醒
         cv_.wait(lock);
         if (err_ == nullptr)
         {
