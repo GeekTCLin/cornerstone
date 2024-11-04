@@ -235,6 +235,7 @@ void raft_server::handle_election_timeout()
     }
 }
 
+// 成为候选者
 void raft_server::become_candidate()
 {
     prevote_state_.reset();
@@ -299,6 +300,7 @@ void raft_server::request_prevote()
     }
 }
 
+// 发起投票申请
 void raft_server::request_vote()
 {
     l_->info(sstrfmt("requestVote started with term %llu").fmt(state_->get_term()));
@@ -321,6 +323,7 @@ void raft_server::request_vote()
         {
             for (peer_itor it = peers_.begin(); it != peers_.end(); ++it)
             {
+                // 发起投票请求
                 ptr<req_msg> req(cs_new<req_msg>(
                     state_->get_term(),
                     msg_type::vote_request,
