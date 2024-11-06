@@ -121,7 +121,7 @@ private:
     ulong sm_commit_index_;
     bool election_completed_;
     bool config_changing_;
-    bool catching_up_;
+    bool catching_up_;                  // 是否正在追赶日志
     bool stopping_;
     int32 steps_to_down_;
     std::atomic_bool snp_in_progress_;
@@ -150,7 +150,7 @@ private:
     rpc_handler resp_handler_;
     rpc_handler ex_resp_handler_;
     ptr<snapshot> last_snapshot_;
-    std::unordered_set<int32> voted_servers_;
+    std::unordered_set<int32> voted_servers_;       // 投票的服务器id
     uptr<prevote_state> prevote_state_;
 };
 } // namespace cornerstone

@@ -40,6 +40,8 @@ ptr<resp_msg> raft_server::process_req(req_msg& req)
             req.get_type() == msg_type::install_snapshot_request)
         {
             // we allow the server to be continue after term updated to save a round message
+            // 更新任期
+            // vote_request 会主动直接更新任期
             update_term(req.get_term());
 
             // Reset stepping down value to prevent this server goes down when leader crashes after sending a
@@ -190,6 +192,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
     return resp;
 }
 
+// 处理投票请求
 ptr<resp_msg> raft_server::handle_vote_req(req_msg& req)
 {
     ptr<resp_msg> resp(cs_new<resp_msg>(state_->get_term(), msg_type::vote_response, id_, req.get_src()));
@@ -201,6 +204,7 @@ ptr<resp_msg> raft_server::handle_vote_req(req_msg& req)
     if (grant)
     {
         resp->accept(log_store_->next_slot());
+        // 成功投票
         state_->set_voted_for(req.get_src());
         ctx_->state_mgr_->save_state(*state_);
     }
@@ -208,6 +212,7 @@ ptr<resp_msg> raft_server::handle_vote_req(req_msg& req)
     return resp;
 }
 
+// 处理预提交请求
 ptr<resp_msg> raft_server::handle_prevote_req(req_msg& req)
 {
     ptr<resp_msg> resp(cs_new<resp_msg>(state_->get_term(), msg_type::prevote_response, id_, req.get_src()));
@@ -238,12 +243,14 @@ ptr<resp_msg> raft_server::handle_cli_req(req_msg& req)
     // just simply retry, no safety issue here.
     if (role_ == srv_role::leader && !leader)
     {
+        // leader 过期了
         return cs_new<resp_msg>(state_->get_term(), msg_type::append_entries_response, id_, -1);
     }
-
+    
     ptr<resp_msg> resp(cs_new<resp_msg>(state_->get_term(), msg_type::append_entries_response, id_, leader_));
     if (!leader)
     {
+        // 非leader 节点
         return resp;
     }
 
@@ -254,6 +261,7 @@ ptr<resp_msg> raft_server::handle_cli_req(req_msg& req)
         entries.at(i)->set_term(state_->get_term());
 
         log_store_->append(entries.at(i));
+        // 状态机 预提交（提供的接口，可不实现）
         state_machine_->pre_commit(log_store_->next_slot() - 1, entries.at(i)->get_buf(), entries.at(i)->get_cookie());
     }
 

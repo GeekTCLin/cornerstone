@@ -187,7 +187,7 @@ private:
     int32 max_hb_interval_;
     ulong next_log_idx_;
     ulong matched_idx_;
-    time_point last_resp_;
+    time_point last_resp_;          // 上次peer节点回复时间
     std::atomic_bool busy_flag_;
     std::atomic_bool pending_commit_flag_;
     bool hb_enabled_;

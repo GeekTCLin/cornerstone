@@ -218,6 +218,7 @@ void raft_server::handle_election_timeout()
 
     if (ctx_->params_->prevote_enabled_ && role_ == srv_role::follower)
     {
+        // 如果允许预投票，调用 request_prevote()
         if (prevote_state_ && !prevote_state_->empty())
         {
             l_->debug("Election timeout, but there is already a prevote ongoing, ignore this event");
@@ -230,6 +231,7 @@ void raft_server::handle_election_timeout()
     }
     else
     {
+        // 不进行预投票，成为 候选者
         l_->debug("Election timeout, change to Candidate");
         become_candidate();
     }
@@ -239,6 +241,7 @@ void raft_server::handle_election_timeout()
 void raft_server::become_candidate()
 {
     prevote_state_.reset();
+    // 增加任期
     state_->inc_term();
     state_->set_voted_for(-1);
     role_ = srv_role::candidate;
@@ -255,12 +258,14 @@ void raft_server::become_candidate()
     }
 }
 
+// 请求进行预投票
 void raft_server::request_prevote()
 {
     l_->info(sstrfmt("prevote started with term %llu").fmt(state_->get_term()));
     bool change_to_candidate(false);
     {
         read_lock(peers_lock_);
+        // 如果只存在一个节点
         if (peers_.size() == 0)
         {
             change_to_candidate = true;
@@ -278,10 +283,12 @@ void raft_server::request_prevote()
     {
         prevote_state_ = std::make_unique<prevote_state>();
     }
-
+    
+    // 预先投票写给自己投票
     prevote_state_->inc_accepted_votes();
     prevote_state_->add_voted_server(id_);
     {
+        // 给其他节点发送预投票请求
         read_lock(peers_lock_);
         for (peer_itor it = peers_.begin(); it != peers_.end(); ++it)
         {
@@ -323,7 +330,7 @@ void raft_server::request_vote()
         {
             for (peer_itor it = peers_.begin(); it != peers_.end(); ++it)
             {
-                // 发起投票请求
+                // 向peer发起投票请求
                 ptr<req_msg> req(cs_new<req_msg>(
                     state_->get_term(),
                     msg_type::vote_request,
@@ -373,18 +380,21 @@ bool raft_server::request_append_entries(peer& p)
     return false;
 }
 
+// 心跳超时事件
 void raft_server::handle_hb_timeout(peer& p)
 {
     recur_lock(lock_);
     l_->debug(sstrfmt("Heartbeat timeout for %d").fmt(p.get_id()));
     if (role_ == srv_role::leader)
     {
+        // 同步日志
         request_append_entries(p);
         {
             std::lock_guard<std::mutex> guard(p.get_lock());
             if (p.is_hb_enabled())
             {
                 // Schedule another heartbeat if heartbeat is still enabled
+                // 重新注册心跳超时事件
                 scheduler_->schedule(p.get_hb_task(), p.get_current_hb_interval());
             }
             else
@@ -419,6 +429,7 @@ void raft_server::restart_election_timer()
     scheduler_->schedule(election_task_, rand_timeout_());
 }
 
+// 注销选举定时事件
 void raft_server::stop_election_timer()
 {
     if (!election_task_)
@@ -430,10 +441,14 @@ void raft_server::stop_election_timer()
     scheduler_->cancel(election_task_);
 }
 
+// 成为 leader
 void raft_server::become_leader()
 {
+    // 停止选举定时事件
     stop_election_timer();
+    // 更新身份
     role_ = srv_role::leader;
+    // 更新leaderid 为 本节点id
     leader_ = id_;
     srv_to_join_.reset();
     ptr<snapshot> nil_snp;
@@ -444,6 +459,7 @@ void raft_server::become_leader()
             it->second->set_next_log_idx(log_store_->next_slot());
             it->second->set_snapshot_in_sync(nil_snp);
             it->second->set_free();
+            // 对各flower 节点注册心跳超时事件
             enable_hb_for_peer(*(it->second));
         }
     }
@@ -500,6 +516,7 @@ bool raft_server::update_term(ulong term)
 {
     if (term > state_->get_term())
     {
+        // 更新任期
         state_->set_term(term);
         state_->set_voted_for(-1);
         election_completed_ = false;
@@ -638,6 +655,7 @@ void raft_server::on_snapshot_completed(ptr<snapshot>& s, bool result, const ptr
     snp_in_progress_.store(false);
 }
 
+// 创建同步日志请求
 ptr<req_msg> raft_server::create_append_entries_req(peer& p)
 {
     ulong cur_nxt_idx(0L);
@@ -1068,10 +1086,13 @@ bool raft_server::is_leader() const
         }
 
         std::sort(peer_resp_times.begin(), peer_resp_times.end());
+        // 取出排序时间的中间值 用于计算和当前的差值
         time_elasped_since_quorum_resp =
             static_cast<int32>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                    system_clock::now() - peer_resp_times[peers_.size() / 2])
                                    .count());
+        // 差值超过 最大选举时间的2倍
+        // 与一半peer节点太久未通信，判断本leader节点与其他peer节点失联，返回false
         if (time_elasped_since_quorum_resp > ctx_->params_->election_timeout_upper_bound_ * 2)
         {
             return false;

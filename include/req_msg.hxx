@@ -65,8 +65,8 @@ public:
     }
 
 private:
-    ulong last_log_term_;
-    ulong last_log_idx_;
+    ulong last_log_term_;       // 最新日志的任期
+    ulong last_log_idx_;        // 最新日志的下标
     ulong commit_idx_;
     std::vector<ptr<log_entry>> log_entries_;
 };
