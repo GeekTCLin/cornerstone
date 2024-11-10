@@ -20,7 +20,9 @@ using namespace cornerstone;
 
 void peer::send_req(ptr<req_msg>& req, rpc_handler& handler)
 {
+    // 感觉其实可以不用 async_result，因为没有wait吧
     ptr<rpc_result> pending = cs_new<rpc_result>(handler);
+    // 这里又包裹了一层，先触发 h 再触发 handler
     rpc_handler h = [this, req, pending](ptr<resp_msg>& resp, const ptr<rpc_exception>& ex) mutable
     { this->handle_rpc_result(req, pending, resp, ex); };
     rpc_->send(req, h);
@@ -44,6 +46,7 @@ void peer::handle_rpc_result(
     }
     else
     {
+        // 降低心跳检测频率
         slow_down_hb();
         pending_result->set_result(ptr<resp_msg>(), err);
     }

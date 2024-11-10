@@ -969,7 +969,10 @@ void raft_server::commit_in_bg()
     }
 }
 
-// 向leader 节点发送 节点加入请求
+// 向leader 节点发送 节点加入请求，添加一个节点配置
+// add_srv 并没有给出直接调用，感觉理论上是 通过RPC 接口发送至集群中某一个节点进行处理
+// 然后通过该节点发送消息至leader
+// 应该是新加入的节点 Raft Server 实例 向某一个节点发送请求，触发 add_srv
 ptr<async_result<bool>> raft_server::add_srv(const srv_config& srv)
 {
     bufptr buf(srv.serialize());

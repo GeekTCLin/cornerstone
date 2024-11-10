@@ -557,6 +557,7 @@ void raft_server::sync_log_to_new_srv(ulong start_idx)
             new_conf->get_servers().end(), config_->get_servers().begin(), config_->get_servers().end());
         new_conf->get_servers().push_back(conf_to_add_);
         bufptr new_conf_buf(new_conf->serialize());
+        // 同步 新加入节点的配置日志 给peer
         ptr<log_entry> entry(cs_new<log_entry>(state_->get_term(), std::move(new_conf_buf), log_val_type::conf));
         log_store_->append(entry);
         config_changing_ = true;

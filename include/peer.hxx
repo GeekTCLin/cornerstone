@@ -163,14 +163,20 @@ public:
         current_hb_interval_ = std::min(max_hb_interval_, current_hb_interval_ + rpc_backoff_);
     }
 
+    // 恢复原始心跳间隔
     void resume_hb_speed()
     {
         current_hb_interval_ = hb_interval_;
     }
 
+    
+    /// @brief          发送RPC 请求
+    /// @param req      请求消息
+    /// @param handler  回复时触发回调
     void send_req(ptr<req_msg>& req, rpc_handler& handler);
 
 private:
+    // 回调函数，当RPC 请求发回reponse时触发
     void handle_rpc_result(
         ptr<req_msg>& req,
         ptr<rpc_result>& pending_result,
@@ -178,21 +184,23 @@ private:
         const ptr<rpc_exception>& err);
 
 private:
-    ptr<srv_config> config_;
-    ptr<delayed_task_scheduler> scheduler_;
-    ptr<rpc_client> rpc_;
-    int32 current_hb_interval_;
-    int32 hb_interval_;
-    int32 rpc_backoff_;
-    int32 max_hb_interval_;
-    ulong next_log_idx_;
-    ulong matched_idx_;
-    time_point last_resp_;          // 上次peer节点回复时间
-    std::atomic_bool busy_flag_;
+    ptr<srv_config> config_;                    // 节点配置
+    ptr<delayed_task_scheduler> scheduler_;     // 时间事件管理类，（用于peer注册心跳超时事件）
+    ptr<rpc_client> rpc_;                       // rpc 客户端，处理网络连接、数据收发
+    int32 current_hb_interval_;                 // 当前心跳检测时间间隔
+    int32 hb_interval_;                         // 心跳检测间隔
+    int32 rpc_backoff_;                         // 心跳检测变化增量
+    int32 max_hb_interval_;                     // 最大心跳检测间隔
+    ulong next_log_idx_;                        // 
+    ulong matched_idx_;                         // 匹配的id
+    time_point last_resp_;                      // 上次peer节点回复时间
+    std::atomic_bool busy_flag_;                // busy_flag_ 为true时，代表发送了 append_entries 或者          
+                                                // install_snapshot_request 请求，需要进行等待？？？
+                                                // 所以不能连续 append_entries，必须等待上次请求返回才能执行
     std::atomic_bool pending_commit_flag_;
-    bool hb_enabled_;
-    ptr<delayed_task> hb_task_;
-    ptr<snapshot_sync_ctx> snp_sync_ctx_;
+    bool hb_enabled_;                           // 是否开启心跳检测
+    ptr<delayed_task> hb_task_;                 // 心跳事件
+    ptr<snapshot_sync_ctx> snp_sync_ctx_;       
     std::mutex lock_;
 };
 } // namespace cornerstone
