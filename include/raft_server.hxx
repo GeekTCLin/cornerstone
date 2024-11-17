@@ -118,6 +118,13 @@ private:
     int32 leader_;
     int32 id_;
     srv_role role_;
+    ptr<srv_state> state_;
+
+    ptr<delayed_task_scheduler> scheduler_;         // 定时任务注册器
+    ptr<state_machine> state_machine_;
+    ptr<log_store> log_store_;
+    ptr<logger> l_;
+    ptr<cluster_config> config_;
 
     int32 votes_granted_;
     std::unordered_set<int32> voted_servers_;       // 投票的服务器id
@@ -136,18 +143,16 @@ private:
     int32 steps_to_down_;                           // 只有handle_leave_cluster_req 才会更改这个值
     std::atomic_bool snp_in_progress_;
     std::unique_ptr<context> ctx_;
-    ptr<delayed_task_scheduler> scheduler_;
+    
 
     std::unordered_map<int32, ptr<peer>> peers_;
     mutable std::shared_timed_mutex peers_lock_;                // c++14 17 支持
     std::unordered_map<int32, ptr<rpc_client>> rpc_clients_;    // 客户端map
     
-    ptr<srv_state> state_;
-    ptr<log_store> log_store_;
-    ptr<state_machine> state_machine_;
-    ptr<logger> l_;
+    
+
     std::function<int32()> rand_timeout_;
-    ptr<cluster_config> config_;
+    
     ptr<peer> srv_to_join_;
     ptr<srv_config> conf_to_add_;
     std::recursive_mutex lock_;
