@@ -44,8 +44,7 @@ ptr<resp_msg> raft_server::process_req(req_msg& req)
             // vote_request 会主动直接更新任期
             update_term(req.get_term());
 
-            // Reset stepping down value to prevent this server goes down when leader crashes after sending a
-            // LeaveClusterRequest
+            // Reset stepping down value to prevent this server goes down when leader crashes after sending a LeaveClusterRequest
             if (steps_to_down_ > 0)
             {
                 steps_to_down_ = 2;
@@ -421,6 +420,7 @@ void raft_server::on_retryable_req_err(ptr<peer>& p, ptr<req_msg>& req)
     p->send_req(req, ex_resp_handler_);
 }
 
+// leader 通知被移除的 服务器节点
 ptr<resp_msg> raft_server::handle_rm_srv_req(req_msg& req)
 {
     std::vector<ptr<log_entry>>& entries(req.log_entries());
@@ -636,6 +636,8 @@ ptr<resp_msg> raft_server::handle_join_cluster_req(req_msg& req)
     return resp;
 }
 
+// 处理离开 集群请求，更新 steps_to_down_，仅这里会修改 steps_to_down_ 大于0
+// 看样子是 另外一端发送至此节点进行离开操作
 ptr<resp_msg> raft_server::handle_leave_cluster_req(req_msg& req)
 {
     ptr<resp_msg> resp(cs_new<resp_msg>(state_->get_term(), msg_type::leave_cluster_response, id_, req.get_src()));
@@ -650,6 +652,7 @@ ptr<resp_msg> raft_server::handle_leave_cluster_req(req_msg& req)
 
 void raft_server::rm_srv_from_cluster(int32 srv_id)
 {
+    // 构建新 cluster_config
     ptr<cluster_config> new_conf = cs_new<cluster_config>(log_store_->next_slot(), config_->get_log_idx());
     for (cluster_config::const_srv_itor it = config_->get_servers().begin(); it != config_->get_servers().end(); ++it)
     {
@@ -663,6 +666,7 @@ void raft_server::rm_srv_from_cluster(int32 srv_id)
                  .fmt(new_conf->get_log_idx()));
     config_changing_ = true;
     bufptr new_conf_buf(new_conf->serialize());
+    // 将新配置写入 日志，同步至其他节点
     ptr<log_entry> entry(cs_new<log_entry>(state_->get_term(), std::move(new_conf_buf), log_val_type::conf));
     log_store_->append(entry);
     request_append_entries();

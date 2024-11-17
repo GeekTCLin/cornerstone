@@ -78,6 +78,7 @@ public:
             result_ = std::forward<_TResult>(result);
             err_ = std::forward<_TException>(err);
             has_result_ = true;
+            // 拷贝handler 使得 handler 执行部分不被 lock_ 所控制
             if (handler_)
             {
                 handler = handler_; // copy handler as std::function assignment is not atomic guaranteed

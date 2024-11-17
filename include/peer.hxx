@@ -191,7 +191,7 @@ private:
     int32 hb_interval_;                         // 心跳检测间隔
     int32 rpc_backoff_;                         // 心跳检测变化增量
     int32 max_hb_interval_;                     // 最大心跳检测间隔
-    ulong next_log_idx_;                        // 
+    ulong next_log_idx_;                        // 期待接收的下一个log id
     ulong matched_idx_;                         // 匹配的id
     time_point last_resp_;                      // 上次peer节点回复时间
     std::atomic_bool busy_flag_;                // busy_flag_ 为true时，代表发送了 append_entries 或者          

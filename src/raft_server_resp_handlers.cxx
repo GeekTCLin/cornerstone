@@ -330,6 +330,7 @@ void raft_server::handle_ext_resp(ptr<resp_msg>& resp, const ptr<rpc_exception>&
             }
 
             l_->debug("peer accepted to stepping down, removing this server from cluster");
+            // 将离开的节点移除
             rm_srv_from_cluster(resp->get_src());
             break;
         case msg_type::install_snapshot_response:

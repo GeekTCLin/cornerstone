@@ -1000,6 +1000,7 @@ ptr<async_result<bool>> raft_server::append_entries(std::vector<bufptr>& logs)
     return send_msg_to_leader(req);
 }
 
+// 主动将一个服务器节点进行移除，发送消息给remove_server_request 消息 给 leader
 ptr<async_result<bool>> raft_server::remove_srv(const int srv_id)
 {
     bufptr buf(buffer::alloc(sz_int));
