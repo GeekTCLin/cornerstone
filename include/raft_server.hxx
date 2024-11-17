@@ -115,44 +115,37 @@ private:
 private:
     static const int default_snapshot_sync_block_size;
     
-    int32 leader_;
-    int32 id_;
-    srv_role role_;
-    ptr<srv_state> state_;
+    int32 leader_;                                  // leaderId
+    int32 id_;                                      // 本服务器id
 
-    ptr<delayed_task_scheduler> scheduler_;         // 定时任务注册器
-    ptr<state_machine> state_machine_;
-    ptr<log_store> log_store_;
-    ptr<logger> l_;
-    ptr<cluster_config> config_;
 
     int32 votes_granted_;
-    std::unordered_set<int32> voted_servers_;       // 投票的服务器id
-    uptr<prevote_state> prevote_state_;
-
-    bool election_completed_;                       // 选举是否结束
-    timer_task<void>::executor election_exec_;      // 超时回调
-    ptr<delayed_task> election_task_;               // 超时任务
-
     ulong quick_commit_idx_;
     ulong sm_commit_index_;
-    
+    bool election_completed_;                       // 选举是否结束
     bool config_changing_;
     bool catching_up_;                              // 是否正在追赶日志 新加入的服务器
     bool stopping_;
     int32 steps_to_down_;                           // 只有handle_leave_cluster_req 才会更改这个值
+
     std::atomic_bool snp_in_progress_;
     std::unique_ptr<context> ctx_;
-    
+    ptr<delayed_task_scheduler> scheduler_;
+   
+    timer_task<void>::executor election_exec_;      // 超时回调
+    ptr<delayed_task> election_task_;               // 超时任务
 
-    std::unordered_map<int32, ptr<peer>> peers_;
+    std::unordered_map<int32, ptr<peer>> peers_;                // leader 节点请求 peer节点使用
     mutable std::shared_timed_mutex peers_lock_;                // c++14 17 支持
-    std::unordered_map<int32, ptr<rpc_client>> rpc_clients_;    // 客户端map
+    std::unordered_map<int32, ptr<rpc_client>> rpc_clients_;    // 客户端连接，主要为follower 节点连接leader时会创建
+    srv_role role_;                                 // 本服务器角色枚举
     
-    
-
+    ptr<srv_state> state_;
+    ptr<log_store> log_store_;
+    ptr<state_machine> state_machine_;
+    ptr<logger> l_;
     std::function<int32()> rand_timeout_;
-    
+    ptr<cluster_config> config_;
     ptr<peer> srv_to_join_;
     ptr<srv_config> conf_to_add_;
     std::recursive_mutex lock_;
@@ -164,6 +157,9 @@ private:
     rpc_handler resp_handler_;
     rpc_handler ex_resp_handler_;
     ptr<snapshot> last_snapshot_;
+    std::unordered_set<int32> voted_servers_;       // 投票的服务器id
+    uptr<prevote_state> prevote_state_;
+
 };
 } // namespace cornerstone
 #endif //_RAFT_SERVER_HXX_
