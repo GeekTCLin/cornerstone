@@ -21,6 +21,14 @@ using namespace cornerstone;
 
 extern const char* __msg_type_str[];
 
+/**
+ * 处理RPC 请求
+ * append_entries_request || vote_request || install_snapshot_request
+ * 需要先进行term 比较，即调用 update_term
+ * 
+ * follower     接收    append_entries_request  req term 更大 更新term，同时重新开始超时选举
+ * candidate    接收    append_entries_request  req term 更大或者 term 相同，变成 follower  
+ */
 ptr<resp_msg> raft_server::process_req(req_msg& req)
 {
     ptr<resp_msg> resp;
@@ -112,9 +120,15 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
     // log_store_->next_slot() for the leader to quick jump to the index that might aligned
     ptr<resp_msg> resp(cs_new<resp_msg>(
         state_->get_term(), msg_type::append_entries_response, id_, req.get_src(), log_store_->next_slot()));
+
+    // 注意这里的 req.get_last_log_idx() last_log_index 是 peer 对象记录的，不是 leader 节点log_store 的last_log_index
+    // 理论上来说，上次同步的 log_idx 肯定 小于 next_slot ，反之发来的日志 大于期待接收的idx，需要回滚判断
     bool log_okay = req.get_last_log_idx() == 0 || (req.get_last_log_idx() < log_store_->next_slot() &&
                                                     req.get_last_log_term() == term_for_log(req.get_last_log_idx()));
-    if (req.get_term() < state_->get_term() || !log_okay)
+    bool term_okey = req.get_term() == state_->get_term();
+    
+    //if (req.get_term() < state_->get_term() || !log_okay)
+    if(!term_okey || !log_okay)
     {
         return resp;
     }
@@ -123,14 +137,15 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
     if (req.log_entries().size() > 0)
     {
         // write logs to store, start from overlapped logs
+        // 过滤相同的日志
         ulong idx = req.get_last_log_idx() + 1;
-        size_t log_idx = 0;
-        while (idx < log_store_->next_slot() && log_idx < req.log_entries().size())
+        size_t log_vector_idx = 0;
+        while (idx < log_store_->next_slot() && log_vector_idx < req.log_entries().size())
         {
-            if (log_store_->term_at(idx) == req.log_entries().at(log_idx)->get_term())
+            if (log_store_->term_at(idx) == req.log_entries().at(log_vector_idx)->get_term())
             {
                 idx++;
-                log_idx++;
+                log_vector_idx++;
             }
             else
             {
@@ -139,11 +154,13 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
         }
 
         // dealing with overwrites
-        while (idx < log_store_->next_slot() && log_idx < req.log_entries().size())
+        // 重写日志
+        while (idx < log_store_->next_slot() && log_vector_idx < req.log_entries().size())
         {
             ptr<log_entry> old_entry(log_store_->entry_at(idx));
             if (old_entry->get_val_type() == log_val_type::app_log)
             {
+                // 状态机回滚
                 state_machine_->rollback(idx, old_entry->get_buf(), old_entry->get_cookie());
             }
             else if (old_entry->get_val_type() == log_val_type::conf)
@@ -152,7 +169,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
                 config_changing_ = false;
             }
 
-            ptr<log_entry> entry = req.log_entries().at(log_idx);
+            ptr<log_entry> entry = req.log_entries().at(log_vector_idx);
             log_store_->write_at(idx, entry);
             if (entry->get_val_type() == log_val_type::app_log)
             {
@@ -165,13 +182,14 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
             }
 
             idx += 1;
-            log_idx += 1;
+            log_vector_idx += 1;
         }
 
         // append new log entries
-        while (log_idx < req.log_entries().size())
+        // 添加新日志
+        while (log_vector_idx < req.log_entries().size())
         {
-            ptr<log_entry> entry = req.log_entries().at(log_idx++);
+            ptr<log_entry> entry = req.log_entries().at(log_vector_idx++);
             ulong idx_for_entry = log_store_->append(entry);
             if (entry->get_val_type() == log_val_type::conf)
             {
@@ -186,7 +204,9 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
     }
 
     leader_ = req.get_src();
+    // 同步commit
     commit(req.get_commit_idx());
+    // 设置下一个期待日志idx
     resp->accept(req.get_last_log_idx() + req.log_entries().size() + 1);
     return resp;
 }
@@ -194,6 +214,7 @@ ptr<resp_msg> raft_server::handle_append_entries(req_msg& req)
 // 处理投票请求
 ptr<resp_msg> raft_server::handle_vote_req(req_msg& req)
 {
+    // 注意这里 req 发来的 last_log_term 和 last_log_idx 为 candidate节点 log_store 数据
     ptr<resp_msg> resp(cs_new<resp_msg>(state_->get_term(), msg_type::vote_response, id_, req.get_src()));
     bool log_okay = req.get_last_log_term() > log_store_->last_entry()->get_term() ||
                     (req.get_last_log_term() == log_store_->last_entry()->get_term() &&
@@ -218,6 +239,7 @@ ptr<resp_msg> raft_server::handle_prevote_req(req_msg& req)
     bool log_okay = req.get_last_log_term() > log_store_->last_entry()->get_term() ||
                     (req.get_last_log_term() == log_store_->last_entry()->get_term() &&
                      log_store_->next_slot() - 1 <= req.get_last_log_idx());
+    // 预投票 任期还没增加，所以 >= 即可
     bool grant = req.get_term() >= state_->get_term() && log_okay;
     if (ctx_->params_->defensive_prevote_)
     {

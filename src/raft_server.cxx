@@ -559,10 +559,13 @@ void raft_server::commit(ulong target_idx)
 
 void raft_server::snapshot_and_compact(ulong committed_idx)
 {
+    // 将提交的 idx加入快照
     if (ctx_->params_->snapshot_distance_ == 0 ||
         (committed_idx - log_store_->start_index()) < (ulong)ctx_->params_->snapshot_distance_)
     {
         // snapshot is disabled or the log store is not long enough
+        // == 0 禁止快照
+        // committed_idx - log_store_->start_index() 需要加入快照的日志数 < snapshot_distance_ 步长，日志数不够不进行快照生成
         return;
     }
 
@@ -679,7 +682,7 @@ ptr<req_msg> raft_server::create_append_entries_req(peer& p)
             p.set_next_log_idx(cur_nxt_idx);
         }
 
-        last_log_idx = p.get_next_log_idx() - 1;
+        last_log_idx = p.get_last_log_idx();
     }
 
     if (last_log_idx >= cur_nxt_idx)
@@ -693,11 +696,13 @@ ptr<req_msg> raft_server::create_append_entries_req(peer& p)
     // for syncing the snapshots, for starting_idx - 1, we can check with last snapshot
     if (last_log_idx > 0 && last_log_idx < starting_idx - 1)
     {
+        // last_log_idx 小于 starting_idx 需要先同步快照
         return create_sync_snapshot_req(p, last_log_idx, term, commit_idx);
     }
 
     ulong last_log_term = term_for_log(last_log_idx);
     ulong end_idx = std::min(cur_nxt_idx, last_log_idx + 1 + ctx_->params_->max_append_size_);
+    // 取出 last_log_idx + 1 到 end_idx 的 日志
     ptr<std::vector<ptr<log_entry>>> log_entries(
         (last_log_idx + 1) >= cur_nxt_idx ? ptr<std::vector<ptr<log_entry>>>()
                                           : log_store_->log_entries(last_log_idx + 1, end_idx));
@@ -705,6 +710,7 @@ ptr<req_msg> raft_server::create_append_entries_req(peer& p)
         lstrfmt("An AppendEntries Request for %d with LastLogIndex=%llu, LastLogTerm=%llu, EntriesLength=%d, "
                 "CommitIndex=%llu and Term=%llu")
             .fmt(p.get_id(), last_log_idx, last_log_term, log_entries ? log_entries->size() : 0, commit_idx, term));
+    
     ptr<req_msg> req(cs_new<req_msg>(
         term, msg_type::append_entries_request, id_, p.get_id(), last_log_term, last_log_idx, commit_idx));
     std::vector<ptr<log_entry>>& v = req->log_entries();
@@ -813,6 +819,7 @@ int32 raft_server::get_snapshot_sync_block_size() const
     return block_size == 0 ? default_snapshot_sync_block_size : block_size;
 }
 
+// 创建向peer节点发送创建快照同步请求
 ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, ulong term, ulong commit_idx)
 {
     std::lock_guard<std::mutex> guard(p.get_lock());
@@ -852,6 +859,7 @@ ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, 
     int32 sz_left = (int32)(snp->size() - offset);
     int32 blk_sz = get_snapshot_sync_block_size();
     bufptr data = buffer::alloc((size_t)(std::min(blk_sz, sz_left)));
+    // 从状态机（本地存储引擎中获取 快照）
     int32 sz_rd = state_machine_->read_snapshot_data(*snp, offset, *data);
     if ((size_t)sz_rd < data->size())
     {
@@ -914,6 +922,7 @@ void raft_server::commit_in_bg()
                     ctx_->event_listener_->on_event(raft_event::logs_catch_up);
                 }
 
+                // 没有更新的需要提交的idx，进行等待
                 std::unique_lock<std::mutex> lock(commit_lock_);
                 commit_cv_.wait(lock);
                 if (stopping_)
@@ -929,6 +938,7 @@ void raft_server::commit_in_bg()
                 }
             }
 
+            // 有可进行提交的idx
             while (sm_commit_index_ < quick_commit_idx_ && sm_commit_index_ < log_store_->next_slot() - 1)
             {
                 sm_commit_index_ += 1;
@@ -939,12 +949,14 @@ void raft_server::commit_in_bg()
                 }
                 else if (log_entry->get_val_type() == log_val_type::conf)
                 {
+                    // 将 配置日志进行保存
                     recur_lock(lock_);
                     log_entry->get_buf().pos(0);
                     ptr<cluster_config> new_conf = cluster_config::deserialize(log_entry->get_buf());
                     l_->info(sstrfmt("config at index %llu is committed").fmt(new_conf->get_log_idx()));
                     ctx_->state_mgr_->save_config(*new_conf);
                     config_changing_ = false;
+                    // 执行配置？？
                     if (config_->get_log_idx() < new_conf->get_log_idx())
                     {
                         reconfigure(new_conf);

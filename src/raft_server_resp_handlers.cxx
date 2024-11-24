@@ -82,6 +82,15 @@ void raft_server::handle_peer_resp(ptr<resp_msg>& resp, const ptr<rpc_exception>
     }
 }
 
+/**
+ * 1.   判断peer 是否存在
+ * 2.   请求 同意，peer 节点接收了日志
+ *      更新peer next_log_idx 以及 matched_idx
+ *      matched_idx 更新 判断 提交
+ * 3.   请求 失败，peer 拒绝了日志
+ *      更新peer next_log_idx 若resp 有设定则更新，反之从当前记录的 next_log_idx 向前-1
+ * 4.   若peer 节点日志落后于当前节点log_store，或者需要同步peer commit，进行追加不等待 心跳或者cli新请求
+ */
 void raft_server::handle_append_entries_resp(resp_msg& resp)
 {
     read_lock(peers_lock_);
@@ -92,8 +101,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp)
         return;
     }
 
-    // if there are pending logs to be synced or commit index need to be advanced, continue to send appendEntries to
-    // this peer
+    // if there are pending logs to be synced or commit index need to be advanced, continue to send appendEntries to this peer
     bool need_to_catchup = true;
     ptr<peer> p = it->second;
     if (resp.get_accepted())
@@ -112,13 +120,16 @@ void raft_server::handle_append_entries_resp(resp_msg& resp)
         {
             matched_indexes[i] = it->second->get_matched_idx();
         }
-
         std::sort(matched_indexes.begin(), matched_indexes.end(), std::greater<ulong>());
         commit(matched_indexes[(peers_.size() + 1) / 2]);
+
+        // 如果 需要同步commit 或者 peer 节点的期待日志 小于 当前存储的 日志，进行追加发送
         need_to_catchup = p->clear_pending_commit() || resp.get_next_idx() < log_store_->next_slot();
     }
     else
     {
+        // 修正 peer next_idx
+        // 如果resp 有发回接收的next_idx 则直接修改，反之 --1 持续试探
         std::lock_guard<std::mutex> guard(p->get_lock());
         if (resp.get_next_idx() > 0 && p->get_next_log_idx() > resp.get_next_idx())
         {

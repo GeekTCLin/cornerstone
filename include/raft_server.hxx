@@ -118,17 +118,16 @@ private:
     int32 leader_;                                  // leaderId
     int32 id_;                                      // 本服务器id
 
-
-    int32 votes_granted_;
-    ulong quick_commit_idx_;
-    ulong sm_commit_index_;
+    int32 votes_granted_;                           // 投票数
+    ulong quick_commit_idx_;                        // 可提交的idx
+    ulong sm_commit_index_;                         // 当前已提交的idx
     bool election_completed_;                       // 选举是否结束
     bool config_changing_;
     bool catching_up_;                              // 是否正在追赶日志 新加入的服务器
     bool stopping_;
     int32 steps_to_down_;                           // 只有handle_leave_cluster_req 才会更改这个值
 
-    std::atomic_bool snp_in_progress_;
+    std::atomic_bool snp_in_progress_;              // 是否正在执行快照生成
     std::unique_ptr<context> ctx_;
     ptr<delayed_task_scheduler> scheduler_;
    

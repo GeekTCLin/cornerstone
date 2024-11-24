@@ -104,6 +104,11 @@ public:
         return next_log_idx_;
     }
 
+    ulong get_last_log_idx() const
+    {
+        return next_log_idx_ - 1;
+    }
+
     void set_next_log_idx(ulong idx)
     {
         next_log_idx_ = idx;
@@ -135,9 +140,12 @@ public:
         pending_commit_flag_.store(true);
     }
 
+    // 这个返回值用于判断是否需要同步 commit
     bool clear_pending_commit()
     {
         bool t = true;
+        // 如果成功将 pending_commit_flag_ 从 true 改成 false，返回 true
+        // 若 pending_commit_flag_ 本身为 false，则返回false
         return pending_commit_flag_.compare_exchange_strong(t, false);
     }
 
@@ -197,7 +205,7 @@ private:
     std::atomic_bool busy_flag_;                // busy_flag_ 为true时，代表发送了 append_entries 或者          
                                                 // install_snapshot_request 请求，需要进行等待？？？
                                                 // 所以不能连续 append_entries，必须等待上次请求返回才能执行
-    std::atomic_bool pending_commit_flag_;
+    std::atomic_bool pending_commit_flag_;      // 是否需要同步 commit
     bool hb_enabled_;                           // 是否开启心跳检测
     ptr<delayed_task> hb_task_;                 // 心跳事件
     ptr<snapshot_sync_ctx> snp_sync_ctx_;       
