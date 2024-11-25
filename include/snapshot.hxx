@@ -25,6 +25,10 @@ namespace cornerstone
 class snapshot
 {
 public:
+    /**
+     * @param   last_log_idx        生成快照的最后日志idx
+     * @param   last_log_term       生成快照的最后日志所属任期
+     */
     snapshot(ulong last_log_idx, ulong last_log_term, const ptr<cluster_config>& last_config, ulong size = 0)
         : last_log_idx_(last_log_idx), last_log_term_(last_log_term), size_(size), last_config_(last_config)
     {

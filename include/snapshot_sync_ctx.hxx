@@ -48,7 +48,7 @@ public:
 
 public:
     ptr<snapshot> snapshot_;
-    ulong offset_;
+    ulong offset_;              // 偏移量
 };
 } // namespace cornerstone
 

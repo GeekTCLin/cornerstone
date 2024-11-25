@@ -581,6 +581,7 @@ void raft_server::snapshot_and_compact(ulong committed_idx)
             l_->info(sstrfmt("creating a snapshot for index %llu").fmt(committed_idx));
 
             // get the latest configuration info
+            // 获取集群配置
             ptr<cluster_config> conf(config_);
             while (conf->get_log_idx() > committed_idx && conf->get_prev_log_idx() >= log_store_->start_index())
             {
@@ -610,9 +611,11 @@ void raft_server::snapshot_and_compact(ulong committed_idx)
 
             ulong log_term_to_compact = log_store_->term_at(committed_idx);
             ptr<snapshot> new_snapshot(cs_new<snapshot>(committed_idx, log_term_to_compact, conf));
+            // 快照创建成功回调
             async_result<bool>::handler_type handler =
                 [this, new_snapshot](bool result, const ptr<std::exception>& e) mutable
             { this->on_snapshot_completed(new_snapshot, result, e); };
+            // 状态机（存储系统）生成快照，对应实现函数需要快照生成后执行handler
             state_machine_->create_snapshot(*new_snapshot, handler);
             snapshot_in_action = false;
         }
@@ -622,12 +625,14 @@ void raft_server::snapshot_and_compact(ulong committed_idx)
         l_->err(sstrfmt("failed to compact logs at index %llu due to errors").fmt(committed_idx));
         if (snapshot_in_action)
         {
+            // 如果中间崩溃异常，将snp_in_progress_状态恢复未false
             bool val = true;
             snp_in_progress_.compare_exchange_strong(val, false);
         }
     }
 }
 
+// 状态机（存储系统）生成快照后回调此函数
 void raft_server::on_snapshot_completed(ptr<snapshot>& s, bool result, const ptr<std::exception>& err)
 {
     do
@@ -648,13 +653,16 @@ void raft_server::on_snapshot_completed(ptr<snapshot>& s, bool result, const ptr
             recur_lock(lock_);
             l_->debug("snapshot created, compact the log store");
 
+            // 更新最新快照
             last_snapshot_ = s;
             if (s->get_last_log_idx() > (ulong)ctx_->params_->reserved_log_items_)
             {
+                // 合并日志
                 log_store_->compact(s->get_last_log_idx() - (ulong)ctx_->params_->reserved_log_items_);
             }
         }
     } while (false);
+    // 取消正在创建快照标记
     snp_in_progress_.store(false);
 }
 
@@ -700,6 +708,7 @@ ptr<req_msg> raft_server::create_append_entries_req(peer& p)
         return create_sync_snapshot_req(p, last_log_idx, term, commit_idx);
     }
 
+    // 上面限制了 last_log_idx 肯定 大于等于 starting_idx，所以一定是从 log_store 获取任期
     ulong last_log_term = term_for_log(last_log_idx);
     ulong end_idx = std::min(cur_nxt_idx, last_log_idx + 1 + ctx_->params_->max_append_size_);
     // 取出 last_log_idx + 1 到 end_idx 的 日志
@@ -832,6 +841,7 @@ ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, 
 
     if (!snp || (last_snapshot_ && last_snapshot_->get_last_log_idx() > snp->get_last_log_idx()))
     {
+        // 如果 peer 的快照未记录 或者 当前快照比 peer记录的快照更新
         snp = last_snapshot_;
         if (snp == nilptr || last_log_idx > snp->get_last_log_idx())
         {
@@ -855,6 +865,7 @@ ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, 
         p.set_snapshot_in_sync(snp);
     }
 
+    // 取出偏移量
     ulong offset = p.get_snapshot_sync_ctx()->get_offset();
     int32 sz_left = (int32)(snp->size() - offset);
     int32 blk_sz = get_snapshot_sync_block_size();
@@ -892,11 +903,13 @@ ulong raft_server::term_for_log(ulong log_idx)
         return 0L;
     }
 
+    // 日志id 在 log_store_
     if (log_idx >= log_store_->start_index())
     {
         return log_store_->term_at(log_idx);
     }
 
+    // 日志id在快照
     ptr<snapshot> last_snapshot(state_machine_->last_snapshot());
     if (!last_snapshot || log_idx != last_snapshot->get_last_log_idx())
     {

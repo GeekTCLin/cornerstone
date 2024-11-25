@@ -208,7 +208,7 @@ private:
     std::atomic_bool pending_commit_flag_;      // 是否需要同步 commit
     bool hb_enabled_;                           // 是否开启心跳检测
     ptr<delayed_task> hb_task_;                 // 心跳事件
-    ptr<snapshot_sync_ctx> snp_sync_ctx_;       
+    ptr<snapshot_sync_ctx> snp_sync_ctx_;       // 快照管理
     std::mutex lock_;
 };
 } // namespace cornerstone

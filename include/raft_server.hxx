@@ -127,7 +127,7 @@ private:
     bool stopping_;
     int32 steps_to_down_;                           // 只有handle_leave_cluster_req 才会更改这个值
 
-    std::atomic_bool snp_in_progress_;              // 是否正在执行快照生成
+    std::atomic_bool snp_in_progress_;              // 是否正在执行快照生成，同一时刻只能存在一个快照的创建
     std::unique_ptr<context> ctx_;
     ptr<delayed_task_scheduler> scheduler_;
    
