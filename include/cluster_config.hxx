@@ -79,8 +79,8 @@ public:
     bufptr serialize();
 
 private:
-    ulong log_idx_;
-    ulong prev_log_idx_;
+    ulong log_idx_;                         // 当前配置 在log_store_ 存储下标
+    ulong prev_log_idx_;                    // 用于定位上一个cluster_config
     std::list<ptr<srv_config>> servers_;
 };
 } // namespace cornerstone

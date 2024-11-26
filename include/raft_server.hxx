@@ -120,7 +120,7 @@ private:
 
     int32 votes_granted_;                           // 投票数
     ulong quick_commit_idx_;                        // 可提交的idx
-    ulong sm_commit_index_;                         // 当前已提交的idx
+    ulong sm_commit_index_;                         // 已提交的idx
     bool election_completed_;                       // 选举是否结束
     bool config_changing_;
     bool catching_up_;                              // 是否正在追赶日志 新加入的服务器
@@ -150,7 +150,7 @@ private:
     std::recursive_mutex lock_;
     std::mutex commit_lock_;
     std::mutex rpc_clients_lock_;
-    std::condition_variable commit_cv_;
+    std::condition_variable commit_cv_;             // 检测提交条件变量，当quick_commit_idx_ 大于 sm_commit_index_ 时唤醒线程
     std::mutex stopping_lock_;
     std::condition_variable ready_to_stop_cv_;
     rpc_handler resp_handler_;

@@ -125,6 +125,7 @@ raft_server::raft_server(context* ctx)
         }
     }
 
+    // 加载 集群服务器节点配置，创建peer对象
     std::list<ptr<srv_config>>& srvs(config_->get_servers());
     for (cluster_config::srv_itor it = srvs.begin(); it != srvs.end(); ++it)
     {
@@ -138,8 +139,10 @@ raft_server::raft_server(context* ctx)
         }
     }
 
+    // 创建后台 commit 线程
     std::thread commiting_thread = std::thread([this]() { this->commit_in_bg(); });
     commiting_thread.detach();
+    // 直接开启超时选举
     restart_election_timer();
     l_->debug(strfmt<30>("server %d started").fmt(id_));
 }
@@ -530,6 +533,7 @@ bool raft_server::update_term(ulong term)
     return false;
 }
 
+// 提交日志
 void raft_server::commit(ulong target_idx)
 {
     if (target_idx > quick_commit_idx_)
@@ -545,12 +549,14 @@ void raft_server::commit(ulong target_idx)
             {
                 if (!request_append_entries(*(it->second)))
                 {
+                    // 无法立即发送 append_entries 请求，设置 需要同步commit 标记
                     it->second->set_pending_commit();
                 }
             }
         }
     }
 
+    // 唤醒 snapshot 快照合并线程
     if (log_store_->next_slot() - 1 > sm_commit_index_ && quick_commit_idx_ > sm_commit_index_)
     {
         commit_cv_.notify_one();
@@ -581,14 +587,16 @@ void raft_server::snapshot_and_compact(ulong committed_idx)
             l_->info(sstrfmt("creating a snapshot for index %llu").fmt(committed_idx));
 
             // get the latest configuration info
-            // 获取集群配置
+            // 获取committed_idx 前的最新集群配置
             ptr<cluster_config> conf(config_);
             while (conf->get_log_idx() > committed_idx && conf->get_prev_log_idx() >= log_store_->start_index())
             {
-                ptr<log_entry> conf_log(log_store_->entry_at(conf->get_prev_log_idx()));
-                conf = cluster_config::deserialize(conf_log->get_buf());
+                // 获取上一个集群配置
+                ptr<log_entry> conf_log_entry(log_store_->entry_at(conf->get_prev_log_idx()));
+                conf = cluster_config::deserialize(conf_log_entry->get_buf());
             }
 
+            // 错误情况，最接近 commit_idx的集群配置找不到了
             if (conf->get_log_idx() > committed_idx && conf->get_prev_log_idx() > 0 &&
                 conf->get_prev_log_idx() < log_store_->start_index())
             {
@@ -870,7 +878,7 @@ ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, 
     int32 sz_left = (int32)(snp->size() - offset);
     int32 blk_sz = get_snapshot_sync_block_size();
     bufptr data = buffer::alloc((size_t)(std::min(blk_sz, sz_left)));
-    // 从状态机（本地存储引擎中获取 快照）
+    // 根据偏移量从状态机（本地存储引擎）中获取 快照
     int32 sz_rd = state_machine_->read_snapshot_data(*snp, offset, *data);
     if ((size_t)sz_rd < data->size())
     {
@@ -1007,6 +1015,7 @@ ptr<async_result<bool>> raft_server::add_srv(const srv_config& srv)
     return send_msg_to_leader(req);
 }
 
+// 一个模拟客户端请求，估计是将一个 raft_server 作为了客户端节点
 ptr<async_result<bool>> raft_server::append_entries(std::vector<bufptr>& logs)
 {
     if (logs.size() == 0)
@@ -1131,6 +1140,7 @@ bool raft_server::is_leader() const
     return role_ == srv_role::leader;
 }
 
+// 这个接口没看到有调用的
 bool raft_server::replicate_log(bufptr& log, const ptr<void>& cookie, uint cookie_tag)
 {
     if (!is_leader())

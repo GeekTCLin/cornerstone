@@ -86,20 +86,23 @@ void raft_server::handle_peer_resp(ptr<resp_msg>& resp, const ptr<rpc_exception>
  * 1.   判断peer 是否存在
  * 2.   请求 同意，peer 节点接收了日志
  *      更新peer next_log_idx 以及 matched_idx
- *      matched_idx 更新 判断 提交
+ *      matched_idx 更新 判断 是否进行commit提交
  * 3.   请求 失败，peer 拒绝了日志
- *      更新peer next_log_idx 若resp 有设定则更新，反之从当前记录的 next_log_idx 向前-1
+ *      更新peer next_log_idx 若resp 有设定则更新，反之从当前记录的 next_log_idx 向前-1 逆推日志进行试探
  * 4.   若peer 节点日志落后于当前节点log_store，或者需要同步peer commit，进行追加不等待 心跳或者cli新请求
  */
 void raft_server::handle_append_entries_resp(resp_msg& resp)
 {
     read_lock(peers_lock_);
     peer_itor it = peers_.find(resp.get_src());
+    /** 
+    * handle_peer_resp 有检测，理论可以不检测了
     if (it == peers_.end())
     {
         l_->info(sstrfmt("the response is from an unkonw peer %d").fmt(resp.get_src()));
         return;
     }
+    */
 
     // if there are pending logs to be synced or commit index need to be advanced, continue to send appendEntries to this peer
     bool need_to_catchup = true;
@@ -147,6 +150,7 @@ void raft_server::handle_append_entries_resp(resp_msg& resp)
     // Try to match up the logs for this peer
     if (role_ == srv_role::leader && need_to_catchup)
     {
+        //Maybe Error 这里如果make_busy 失败，是否会导致 clear_pending_commit 错误消除了 pending_commit_flag_ ????
         request_append_entries(*p);
     }
 }
@@ -155,14 +159,16 @@ void raft_server::handle_install_snapshot_resp(resp_msg& resp)
 {
     read_lock(peers_lock_);
     peer_itor it = peers_.find(resp.get_src());
+    /**
+    * handle_peer_resp 有检测，理论可以不检测了
     if (it == peers_.end())
     {
         l_->info(sstrfmt("the response is from an unkonw peer %d").fmt(resp.get_src()));
         return;
     }
+    */
 
-    // if there are pending logs to be synced or commit index need to be advanced, continue to send appendEntries to
-    // this peer
+    // if there are pending logs to be synced or commit index need to be advanced, continue to send appendEntries to this peer
     bool need_to_catchup = true;
     ptr<peer> p = it->second;
     if (resp.get_accepted())
@@ -178,16 +184,22 @@ void raft_server::handle_install_snapshot_resp(resp_msg& resp)
         {
             if (resp.get_next_idx() >= sync_ctx->get_snapshot()->size())
             {
+                // 理论上 resp.get_next_idx() 应该是 == sync_ctx->get_snapshot()->size()
                 l_->debug("snapshot sync is done");
-                ptr<snapshot> nil_snp;
+                // 更新 peer 节点 next_log_idx 下一个期待id 和 提交id
                 p->set_next_log_idx(sync_ctx->get_snapshot()->get_last_log_idx() + 1);
                 p->set_matched_idx(sync_ctx->get_snapshot()->get_last_log_idx());
+
+                ptr<snapshot> nil_snp;
                 p->set_snapshot_in_sync(nil_snp);
+                // 如果有 commit 需要同步 或者 id 落后于 log_store_
                 need_to_catchup = p->clear_pending_commit() || resp.get_next_idx() < log_store_->next_slot();
             }
             else
             {
+                // 需要继续同步快照
                 l_->debug(sstrfmt("continue to sync snapshot at offset %llu").fmt(resp.get_next_idx()));
+                // 更新偏移量
                 sync_ctx->set_offset(resp.get_next_idx());
             }
         }
@@ -206,8 +218,10 @@ void raft_server::handle_install_snapshot_resp(resp_msg& resp)
     }
 }
 
+// 处理投票响应
 void raft_server::handle_voting_resp(resp_msg& resp)
 {
+    // 任期需要比较，不同任期的投票不能接收
     if (resp.get_term() != state_->get_term())
     {
         l_->info(sstrfmt("Received an outdated vote response at term %llu v.s. current term %llu")
@@ -215,12 +229,14 @@ void raft_server::handle_voting_resp(resp_msg& resp)
         return;
     }
 
+    // 选举已经结束了
     if (election_completed_)
     {
         l_->info("Election completed, will ignore the voting result from this server");
         return;
     }
 
+    // 重复投票
     if (voted_servers_.find(resp.get_src()) != voted_servers_.end())
     {
         l_->info(sstrfmt("Duplicate vote from %d for term %lld").fmt(resp.get_src(), state_->get_term()));
@@ -286,6 +302,7 @@ void raft_server::handle_prevote_resp(resp_msg& resp)
     }
 }
 
+// 部分request的回调绑定
 void raft_server::handle_ext_resp(ptr<resp_msg>& resp, const ptr<rpc_exception>& err)
 {
     recur_lock(lock_);
