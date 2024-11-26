@@ -58,9 +58,9 @@ public:
 
 private:
     ptr<snapshot> snapshot_;
-    ulong offset_;
+    ulong offset_;              // 字节偏移量
     bufptr data_;
-    bool done_;
+    bool done_;                 // 是否结束，本次发送数据达到快照尾部
 };
 } // namespace cornerstone
 

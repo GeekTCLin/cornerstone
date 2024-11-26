@@ -199,7 +199,7 @@ public:
     int32 log_sync_batch_size_;
     int32 log_sync_stop_gap_;
     int32 snapshot_distance_;           // 快照idx 保存步长，为0代表禁止快照
-    int32 snapshot_block_size_;
+    int32 snapshot_block_size_;         // 快照同步每次发送块的字节大小限制
     int32 max_append_size_;
     int32 reserved_log_items_;
     bool prevote_enabled_;

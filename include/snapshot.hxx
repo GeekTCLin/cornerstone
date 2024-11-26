@@ -62,10 +62,10 @@ public:
     bufptr serialize();
 
 private:
-    ulong last_log_idx_;
-    ulong last_log_term_;
-    ulong size_;
-    ptr<cluster_config> last_config_;
+    ulong last_log_idx_;                // 快照最后一个log的idx
+    ulong last_log_term_;               // 快照最后一个log的任期
+    ulong size_;                        // 快照字节长度
+    ptr<cluster_config> last_config_;   // 该快照最新集群配置
 };
 } // namespace cornerstone
 

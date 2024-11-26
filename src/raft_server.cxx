@@ -833,6 +833,7 @@ void raft_server::reconfigure(const ptr<cluster_config>& new_config)
 int32 raft_server::get_snapshot_sync_block_size() const
 {
     int32 block_size = ctx_->params_->snapshot_block_size_;
+    // 若未配置，选择default_snapshot_sync_block_size
     return block_size == 0 ? default_snapshot_sync_block_size : block_size;
 }
 
@@ -873,9 +874,11 @@ ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, 
         p.set_snapshot_in_sync(snp);
     }
 
-    // 取出偏移量
+    // 取出字节偏移量
     ulong offset = p.get_snapshot_sync_ctx()->get_offset();
+    // 快照剩余字节数
     int32 sz_left = (int32)(snp->size() - offset);
+    // 每次发送 block字节数限制
     int32 blk_sz = get_snapshot_sync_block_size();
     bufptr data = buffer::alloc((size_t)(std::min(blk_sz, sz_left)));
     // 根据偏移量从状态机（本地存储引擎）中获取 快照
@@ -900,6 +903,7 @@ ptr<req_msg> raft_server::create_sync_snapshot_req(peer& p, ulong last_log_idx, 
         snp->get_last_log_term(),
         snp->get_last_log_idx(),
         commit_idx));
+    // 将 sync_req 放入 req 的 log_entries 中
     req->log_entries().push_back(cs_new<log_entry>(term, sync_req->serialize(), log_val_type::snp_sync_req));
     return req;
 }

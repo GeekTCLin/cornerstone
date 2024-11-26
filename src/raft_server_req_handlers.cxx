@@ -327,6 +327,8 @@ ptr<resp_msg> raft_server::handle_install_snapshot_req(req_msg& req)
     {
         if (role_ == srv_role::candidate)
         {
+            // 如果一个节点脱离集群，超时后增加任期可能会成为candidate
+            // 而leader节点因为一直没脸上该节点，日志长期未同步则发送了快照同步请求
             become_follower();
         }
         else if (role_ == srv_role::leader)
@@ -358,6 +360,7 @@ ptr<resp_msg> raft_server::handle_install_snapshot_req(req_msg& req)
         return resp;
     }
 
+    // 从 req 中取出 sync_req
     ptr<snapshot_sync_req> sync_req(snapshot_sync_req::deserialize(entries[0]->get_buf()));
     if (sync_req->get_snapshot().get_last_log_idx() <= sm_commit_index_)
     {
@@ -368,6 +371,7 @@ ptr<resp_msg> raft_server::handle_install_snapshot_req(req_msg& req)
 
     if (handle_snapshot_sync_req(*sync_req))
     {
+        // 注意这里的计算， next_idx 是下一个期待的字节数下标了
         resp->accept(sync_req->get_offset() + sync_req->get_data().size());
     }
 
@@ -378,6 +382,7 @@ bool raft_server::handle_snapshot_sync_req(snapshot_sync_req& req)
 {
     try
     {
+        // 本地状态机（存储引擎）写入 部分快照数据
         state_machine_->save_snapshot_data(req.get_snapshot(), req.get_offset(), req.get_data());
         if (req.is_done())
         {
