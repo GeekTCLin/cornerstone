@@ -182,6 +182,7 @@ void raft_server::handle_install_snapshot_resp(resp_msg& resp)
         }
         else
         {
+            // 注意这里resp.get_next_idx()是同步的字节数，所以才用于和 快照的 size字节长度进行比较
             if (resp.get_next_idx() >= sync_ctx->get_snapshot()->size())
             {
                 // 理论上 resp.get_next_idx() 应该是 == sync_ctx->get_snapshot()->size()

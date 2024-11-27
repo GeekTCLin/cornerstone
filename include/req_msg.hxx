@@ -67,7 +67,7 @@ public:
 private:
     ulong last_log_term_;       // 最新日志的任期
     ulong last_log_idx_;        // 最新日志的下标
-    ulong commit_idx_;
+    ulong commit_idx_;          // 提交的log 下标
     std::vector<ptr<log_entry>> log_entries_;
 };
 } // namespace cornerstone

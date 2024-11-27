@@ -49,8 +49,8 @@ public:
     }
 
 private:
-    ulong next_idx_;
-    bool accepted_;
+    ulong next_idx_;        // 期待的log 下标 或者 期待的字节下标 （快照）
+    bool accepted_;         // 是否接受请求
 };
 } // namespace cornerstone
 

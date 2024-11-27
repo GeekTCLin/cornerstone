@@ -129,7 +129,7 @@ private:
 
     std::atomic_bool snp_in_progress_;              // 是否正在执行快照生成，同一时刻只能存在一个快照的创建
     std::unique_ptr<context> ctx_;
-    ptr<delayed_task_scheduler> scheduler_;
+    ptr<delayed_task_scheduler> scheduler_;         // 时间事件管理器
    
     timer_task<void>::executor election_exec_;      // 超时回调
     ptr<delayed_task> election_task_;               // 超时任务
@@ -139,23 +139,23 @@ private:
     std::unordered_map<int32, ptr<rpc_client>> rpc_clients_;    // 客户端连接，主要为follower 节点连接leader时会创建
     srv_role role_;                                 // 本服务器角色枚举
     
-    ptr<srv_state> state_;
-    ptr<log_store> log_store_;
-    ptr<state_machine> state_machine_;
-    ptr<logger> l_;
-    std::function<int32()> rand_timeout_;
-    ptr<cluster_config> config_;
-    ptr<peer> srv_to_join_;
+    ptr<srv_state> state_;                          // 服务器状态（含任期、投票目标）
+    ptr<log_store> log_store_;                      // 日志存储
+    ptr<state_machine> state_machine_;              // 状态机（存储引擎）
+    ptr<logger> l_;                                 // 日志
+    std::function<int32()> rand_timeout_;           // 随机超时时间计算函数
+    ptr<cluster_config> config_;                    // 集群配置
+    ptr<peer> srv_to_join_; 
     ptr<srv_config> conf_to_add_;
     std::recursive_mutex lock_;
-    std::mutex commit_lock_;
+    std::mutex commit_lock_;                        // commit 锁，配合 commit_cv_ 等待线程唤醒
     std::mutex rpc_clients_lock_;
-    std::condition_variable commit_cv_;             // 检测提交条件变量，当quick_commit_idx_ 大于 sm_commit_index_ 时唤醒线程
-    std::mutex stopping_lock_;
+    std::condition_variable commit_cv_;             // 检测提交条件变量，当quick_commit_idx_ 大于 sm_commit_index_ 时唤醒bg线程
+    std::mutex stopping_lock_;                      // 用于等待 commit 线程，配合ready_to_stop_cv_
     std::condition_variable ready_to_stop_cv_;
-    rpc_handler resp_handler_;
-    rpc_handler ex_resp_handler_;
-    ptr<snapshot> last_snapshot_;
+    rpc_handler resp_handler_;                      // resp 回调
+    rpc_handler ex_resp_handler_;                   // 扩展 resp 回调
+    ptr<snapshot> last_snapshot_;                   // 最新快照
     std::unordered_set<int32> voted_servers_;       // 投票的服务器id
     uptr<prevote_state> prevote_state_;
 
